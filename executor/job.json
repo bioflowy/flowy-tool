@@ -1,0 +1,40 @@
+{
+  "basedir": "/tmp/job123",
+  "command": [
+    "python3",
+    "/tmp/job123/args.py",
+    "bwa",
+    "mem",
+    "-t",
+    "2",
+    "-I",
+    "1,2,3,4",
+    "-m",
+    "3",
+    "/tmp/job123/chr20.fa",
+    "/tmp/job123/example_human_Illumina.pe_1.fastq",
+    "/tmp/job123/example_human_Illumina.pe_2.fastq"
+  ],
+  "files": [
+    {
+      "class": "File",
+      "location": "/home/uehara/flowy-tool/tests/chr20.fa",
+      "path": "/tmp/job123/chr20.fa"
+    },
+    {
+      "class": "File",
+      "location": "/home/uehara/flowy-tool/tests/example_human_Illumina.pe_1.fastq",
+      "path": "/tmp/job123/example_human_Illumina.pe_1.fastq"
+    },
+    {
+      "class": "File",
+      "location": "/home/uehara/flowy-tool/tests/example_human_Illumina.pe_2.fastq",
+      "path": "/tmp/job123/example_human_Illumina.pe_2.fastq"
+    },
+    {
+      "class": "File",
+      "location": "/home/uehara/flowy-tool/tests/args.py",
+      "path": "/tmp/job123/args.py"
+    }
+  ]
+}
