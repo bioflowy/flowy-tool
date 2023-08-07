@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
-import { v4 as uuidv4 } from 'uuid';
 import { CWLObjectType } from "./types";
+import { generateUuid } from "./id_utils";
 export type PathType = "File" | "Directory" | "CreateFile" | "WritableFile"| "WritableDirectory" | "CreateWritableFile"
 
 export type MapperEnt = {
@@ -45,7 +45,7 @@ export class PathMapper {
   let stagedir = this.stagedir
   for(const fob of referenced_files){
       if(this.separateDirs){
-          stagedir = path.join(this.stagedir, "stg" + uuidv4())
+          stagedir = path.join(this.stagedir, "stg" + generateUuid())
       }
       const cp = fob["writable"] === true?? false
       this.visit(

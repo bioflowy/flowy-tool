@@ -1,10 +1,24 @@
 import { CommandLineTool } from "./commandlinetool"
-import { JobBase } from "./job"
+import { JobBase, JobCommand } from "./job"
 import { MapperEnt, PathMapper } from "./pathmapper";
 import { RuntimeContext } from "./runtimecontext"
-import { createTmpDir, getRandomDir } from "./utils"
+import { check_call, createTmpDir } from "./utils"
 import path from 'path';
 import fs from 'fs';
+import { Builder } from "./builder";
+import { DockerRequirement, Requirement } from "./hints";
+import { CWLObjectType } from "./types";
+import winston from 'winston';
+import { get_image } from "./docker_utils";
+import { getRandomDir } from "./id_utils";
+
+const _logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.simple(),
+  transports: [
+    new winston.transports.Console()
+  ],
+});
 
 function append_volume(runtime: string[], source: string, target: string, writable: boolean = false){
   // Add binding arguments to the runtime list."""
@@ -16,20 +30,38 @@ function append_volume(runtime: string[], source: string, target: string, writab
   if(!writable){
       options.push("readonly")
   }
-  runtime.push(`--mount=${options.join}`)
+  runtime.push(`--mount=${options.join(',')}`)
   // Unlike "--volume", "--mount" will fail if the volume doesn't already exist.
   // if not os.path.exists(source):
   //     os.makedirs(source)
 }
 
 export class DockerCommandLineJob extends JobBase{
+  docker_exec:string
   containerOutdir: string;
   CONTAINER_TMPDIR: string = "/tmp"
     inplaceUpdate: any;
-  constructor(pathmapper: PathMapper){
-    super(pathmapper)
+  constructor(pathmapper: PathMapper,
+    builder: Builder,
+    requirement: Requirement,
+    outdir: string,
+    tmpdir: string, 
+    stagedir: string){
+    super(pathmapper,builder,requirement,outdir,tmpdir,stagedir)
     this.containerOutdir = getRandomDir()
+    this.docker_exec ="docker"
   }
+  _required_env() {
+  /* spec currently says "HOME must be set to the designated output
+  # directory." but spec might change to designated temp directory.
+  # runtime.append("--env=HOME=/tmp")
+  */
+  return {
+      "TMPDIR": this.CONTAINER_TMPDIR,
+      "HOME": this.builder.outdir,
+  }
+}
+
   addVolumes(
     pathmapper: PathMapper,
     runtime: string[],
@@ -102,10 +134,84 @@ export class DockerCommandLineJob extends JobBase{
         // ensureWritable(hostOutdirTgt || fileCopy);
     }
 }
+  async get_from_requirements(
+  
+  r: DockerRequirement,
+  pull_image: boolean,
+  force_pull: boolean,
+  tmp_outdir_prefix: string
+) : Promise<string>{
+  // if(not shutil.which(this.docker_exec)){
+  //     raise WorkflowException(f"{self.docker_exec} executable is not available")
+  // }
+  const get_image_rslt = await get_image(this.docker_exec,r, pull_image, force_pull, tmp_outdir_prefix)
+  if(!r.dockerImageId){
+    throw new  Error(`Docker image not found`)
+  }
+  if(get_image_rslt){
+      return Promise.resolve(r.dockerImageId)
+  }
+  throw new  Error(`Docker image ${r.dockerImageId} not found`)
+}
 
+
+ async run(
+  runtimeContext: RuntimeContext) :Promise<JobCommand>{
+  const debug = runtimeContext.debug
+  let img_id:string | undefined = undefined
+  const user_space_docker_cmd = runtimeContext.user_space_docker_cmd
+  if(this.requirement.dockerRequirement && user_space_docker_cmd) {
+    const docker_req = this.requirement.dockerRequirement
+      // For user-space docker implementations, a local image name or ID
+      // takes precedence over a network pull
+      if(docker_req.dockerImageId){
+          img_id = docker_req.dockerImageId
+      }else if(docker_req.dockerPull){
+          img_id = docker_req.dockerPull
+          const cmd = [...user_space_docker_cmd, "pull", img_id]
+          const {error} = await check_call(cmd)
+          if(error){
+            throw error
+          }
+      }else{
+          throw new Error(
+              "Docker image must be specified as 'dockerImageId' or " +
+              "'dockerPull' when using user space implementations of " +
+              "Docker"
+          )
+      }
+    }else{
+      const docker_req = this.requirement.dockerRequirement
+          if( docker_req && runtimeContext.use_container){
+              img_id = await this.get_from_requirements(
+                      docker_req,
+                      runtimeContext.pull_image,
+                      runtimeContext.force_docker_pull,
+                      runtimeContext.tmp_outdir_prefix,
+                  )
+        }
+  }
+  if(!img_id){
+    throw new Error("image id not found")
+  }
+
+  // Copy as don't want to modify our env
+      const env:{[key:string]:string} = {}//dict(os.environ)
+      const [runtime, cidfile] = this.create_runtime(env, runtimeContext)
+
+      runtime.push(img_id)
+      const commands:string[] = [...runtime]
+      for (const binding of this.builder.bindings) {
+        commands.push(...this.builder.generate_arg(binding))
+      }
+      return Promise.resolve({
+        basedir: runtimeContext.basedir??"",
+        command:commands,
+        files: this.builder.files
+      })
+    }
   create_runtime(
-  env: {[key:string]:string}, runtimeContext: RuntimeContext,tool: CommandLineTool
-) :[string[], string | undefined]{
+  env: {[key:string]:string}, runtimeContext: RuntimeContext) :[string[], string | undefined]{
   // any_path_okay = self.builder.get_requirement("DockerRequirement")[1] or False
   const user_space_docker_cmd = runtimeContext.user_space_docker_cmd
   const runtime :string[] = []

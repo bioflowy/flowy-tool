@@ -10,6 +10,7 @@ import { CommandLineJob, JobBase } from "./job";
 import { PathMapper } from "./pathmapper";
 import { v4 } from "uuid";
 import { check_adjust } from "./commandlinetool";
+import { Requirement, load_hints } from "./hints";
 // import abc
 // import copy
 // import functools
@@ -566,9 +567,11 @@ export function avroize_type(
 
 export class Process {
   // Abstract CWL Process.
+  requirement: Requirement
   tool:cwlTsAuto.CommandLineTool
   constructor(tool:cwlTsAuto.CommandLineTool, loadingContext: LoadingContext) {
     this.tool = tool
+    this.requirement = load_hints(tool)
     // Build a Process object from the provided dictionary."""
     // super().__init__()
     // self.metadata: CWLObjectType = getdefault(loadingContext.metadata, {})
@@ -942,7 +945,7 @@ export class Process {
         check_adjust(pathmapper,builder,obj)
       }
       visit_class([builder.files, builder.bindings], ["File"], _check_adjust)
-      return new CommandLineJob(pathmapper,builder,runtime_context.basedir??"", outdir,tmpdir,stagedir);
+      return new CommandLineJob(pathmapper,builder,this.requirement, outdir,tmpdir,stagedir);
     }
 
   // def visit(self, op: Callable[[CommentedMap], None]) -> None:

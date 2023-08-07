@@ -1,5 +1,5 @@
 import { ValidationException } from "cwl-ts-auto"
-import { CWLDirectory, CWLFile, InputArray, InputRecord, InputBinding, InputParameter} from "./types"
+import { CWLDirectory, CWLFile, InputArray, InputRecord, InputBinding, InputParameter, CWLOutputType} from "./types"
 import ivm from 'isolated-vm';
 
 type CWLObjectType = object
@@ -20,17 +20,25 @@ export class Builder {
   job : CWLObjectType
   files : Files
   bindings: InputBinding[]
-  constructor(job: CWLObjectType, files: Files, bindings: InputBinding[]){
+  outdir: string
+  tmpdir: string
+  stagedir: string
+constructor(job: CWLObjectType, files: Files, bindings: InputBinding[],outdir: string,
+  tmpdir: string,
+  stagedir: string){
     this.job = job
     this.files = files
     this.bindings = bindings
+    this.outdir = outdir
+    this.tmpdir = tmpdir
+    this.stagedir = stagedir
   }
   
   generate_arg(binding: InputBinding):string[]{
     let value = binding.datum
     // debug = _logger.isEnabledFor(logging.DEBUG)
     if(binding.valueFrom){
-      const result = do_eval(binding.valueFrom)
+      const result = this.do_eval(binding.valueFrom)
       value = result
     }
     const prefix = binding.prefix
@@ -78,8 +86,22 @@ export class Builder {
     }
     return args.filter((e)=>(e !== undefined)) as string[]
   }
-}
-export function do_eval2(expr: string) {
+  do_eval(expr: string): CWLOutputType{
+    const root_vars = {cores:2}
+    return do_eval2(expr,root_vars)
+  }
+  }
+
+export function interporate(expr: String): CWLOutputType{
+  const root_vars = {cores:2}
+    let newStr = expr.replace(/\$\((.*?)\)/g, (r, expr) => {
+      const result = do_eval2(expr,root_vars)
+      return String(result)
+    });
+    return newStr
+  }
+
+export function do_eval2(expr: string,root_vars:Object): CWLOutputType{
   // 新しいIsolateを作成する
   const isolate = new ivm.Isolate({ memoryLimit: 128 });
 
@@ -87,19 +109,11 @@ export function do_eval2(expr: string) {
   const context = isolate.createContextSync();
 
   // Contextに基本的なconsole.log関数を注入する
-  context.global.setSync('runtime',new ivm.ExternalCopy( {cores:2}).copyInto());
+  context.global.setSync('runtime',new ivm.ExternalCopy(root_vars).copyInto());
 
   // Contextにスクリプトを実行する
   const script = isolate.compileScriptSync(expr);
   return script.runSync(context);
-}
- export function do_eval(expr: String):string{
-  let newStr = expr.replace(/\$\((.*?)\)/g, (r, expr) => {
-    // ここで特定の処理を行います。この例ではp1を大文字に変換します
-    const result = do_eval2(expr)
-    return String(result)
-  });
-  return newStr
 }
 function asList(value: any): (string|number)[] {
   if (value === undefined){
@@ -220,16 +234,19 @@ export function bind_input(
           )
       }
     }else if(schema.type instanceof InputArray){
+      const st = schema.type.copy()
       if (
           binding
-          && schema.type.inputBinding == undefined
+          && st.inputBinding == undefined
+          && st.type 
+          && st.type === "array"
           && binding.itemSeparator == undefined
       ){
-        const st = schema.type.copy()
         st.inputBinding = {separate:false}
-        st.streamable = schema.streamable
-        st.format = schema.format
-        st.secondaryFiles = schema.secondaryFiles
+      }
+      st.streamable = schema.streamable
+      st.format = schema.format
+      st.secondaryFiles = schema.secondaryFiles
           // TODO
           // if value_from_expression:
           //     self.bind_input(
@@ -249,7 +266,6 @@ export function bind_input(
           )
             bindings.push(...bis)
             files.push(...fs)
-      }
     }
   // else:
   //     if schema["type"] == "org.w3id.cwl.salad.Any":

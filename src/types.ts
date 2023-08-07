@@ -2,6 +2,7 @@ import * as cwlTsAuto from 'cwl-ts-auto'
 import url from 'url';
 import path from 'path';
 
+export type EnvDict = {[key:string]: string}
 export class CWLFile {
   readonly name: string;
   readonly basename: string;
@@ -30,6 +31,7 @@ export type InputBinding = {
   separate: boolean,
   itemSeparator?: string,
 }
+export type CWLOutputType = string | number | Object | Array<CWLOutputType>
 export type CWLObjectType = {[key:string]:any}
 // compare InputBinding by position
 export function compareInputBinding(a:InputBinding,b:InputBinding):number{
